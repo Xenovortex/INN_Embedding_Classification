@@ -10,5 +10,5 @@ def get_device(dev_idx=0):
 
     torch.cuda.set_device(dev_idx)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-   
+
     return device
