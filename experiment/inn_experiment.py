@@ -75,6 +75,7 @@ class inn_experiment:
         """
         Train INN model.
         """
+        # TODO: Extract Features with pretrained VGG
 
         self.train_loss_log = {l: [] for l in self.train_loss_names}
         self.test_loss_log = {l: [] for l in self.test_loss_names}
@@ -86,7 +87,6 @@ class inn_experiment:
             self.scheduler.step()
             self.model.train()
 
-            loss = 0
             running_avg = {l: [] for l in self.train_loss_names}
 
             print()
@@ -246,13 +246,25 @@ class inn_experiment:
 
         pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)],
                 [self.train_loss_log[name] for name in self.train_loss_names], 'Epoch', 'Loss',
-                ['loss'], "Train Loss History {}".format(self.modelname),
+                ['{}'.format(name) for name in self.train_loss_names], "Train Loss History {}".format(self.modelname),
                 "train_loss_{}".format(self.modelname), sub_dim, figsize, font_size, y_log_scale)
+
+        for name in self.train_loss_names:
+            pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)], self.train_loss_log[name], 'Epoch',
+                    'Loss', ['loss'], "{} Train Loss History {}".format(name, self.modelname),
+                    "train_loss_{}_{}".format(self.modelname, name), sub_dim, figsize, font_size, y_log_scale)
 
         pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)],
                 [self.test_loss_log[name] for name in self.test_loss_names], 'Epoch', 'Loss',
-                ['loss'], "Test Loss History {}".format(self.modelname),
+                ['{}'.format(name) for name in self.test_loss_names], "Test Loss History {}".format(self.modelname),
                 "test_loss_{}".format_map(self.modelname), sub_dim, figsize, font_size, y_log_scale)
+
+        for name in self.test_loss_names:
+            pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)], self.test_loss_log[name], 'Epoch',
+                    'Loss', ['loss'], "{} Test Loss History {}".format(name, self.modelname),
+                    "test_loss_{}_{}".format(self.modelname, name), sub_dim, figsize, font_size, y_log_scale)
+
+
 
 
 
