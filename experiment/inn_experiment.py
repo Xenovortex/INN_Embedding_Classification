@@ -5,6 +5,7 @@ from functionalities import dataloader as dl
 from functionalities import filemanager as fm
 from functionalities import plot as pl
 from architecture import generative_classifier as gc
+from architecture import model as m
 from tqdm import tqdm_notebook as tqdm
 
 
@@ -37,7 +38,7 @@ class inn_experiment:
         self.interval_checkpoint = interval_checkpoint
         self.interval_figure = interval_figure
 
-        #self.model = model.to(self.device)
+        self.vgg = m.get_vgg16()
         self.inn = gc.GenerativeClassifier(init_latent_scale=mu_init, lr=lr_init).to(self.device)
         self.init_param()
 
@@ -75,17 +76,15 @@ class inn_experiment:
         """
         Train INN model.
         """
-        # TODO: Extract Features with pretrained VGG
 
         self.train_loss_log = {l: [] for l in self.train_loss_names}
         self.test_loss_log = {l: [] for l in self.test_loss_names}
 
         t_start = time()
 
-
         for epoch in range(self.num_epoch):
             self.scheduler.step()
-            self.model.train()
+            self.inn.train()
 
             running_avg = {l: [] for l in self.train_loss_names}
 
@@ -106,7 +105,9 @@ class inn_experiment:
 
                 self.inn.optimizer.zero_grad()
 
-                losses = self.inn(img, labels)
+                feat = self.vgg(img)
+
+                losses = self.inn(feat, labels)
                 loss = losses['nll_joint_tr'] + self.beta * losses['cat_ce_tr']
 
                 loss.backward()
@@ -133,7 +134,7 @@ class inn_experiment:
                 print(self.output_fmt.format(*losses_display), flush=True)
 
             if epoch > 0 and (epoch % self.interval_checkpoint) == 0:
-                self.inn.save(f'output/{self.modelname}_{epoch}.pt')
+                self.inn.save(f'{self.modelname}_{epoch}.pt')
 
             if (epoch % self.interval_figure) == 0:
                 # TODO: evaluater
@@ -145,7 +146,7 @@ class inn_experiment:
         print()
 
         print("Evaluating:")
-        self.model.eval()
+        self.inn.eval()
         test_x = torch.stack([x[0][0] for x in self.testset], dim=0).to(self.device)
         test_y = self.onehot(torch.LongTensor([x[1] for x in self.testset]).to(self.device))
         test_losses = self.inn.validate(test_x, test_y)
@@ -153,8 +154,7 @@ class inn_experiment:
 
         print("Final Test Accuracy:", self.test_acc)
 
-        fm.save_model(self.model, '{}'.format(self.modelname))
-        fm.save_weight(self.model, '{}'.format(self.modelname))
+        self.inn.save(f'{self.modelname}.pt')
         fm.save_variable(self.test_acc, '{}_acc'.format(self.modelname))
         fm.save_variable([self.train_loss_log, self.test_loss_log], '{}_loss'.format(self.modelname))
 
@@ -166,7 +166,7 @@ class inn_experiment:
         :param sigma: standard deviation for gaussian
         :return: None
         """
-        for key, param in self.model.named_parameters():
+        for key, param in self.inn.named_parameters():
             split = key.split('.')
             if param.requires_grad:
                 param.data = sigma * torch.randn(param.data.shape).cuda()
@@ -175,34 +175,21 @@ class inn_experiment:
 
 
     def onehot(self, label):
-        y = torch.cuda.FloatTensor(label.shape[0], self.n_classes).zero_()
+        y = torch.cuda.FloatTensor(label.shape[0], self.num_classes).zero_()
         y.scatter_(1, label.view(-1, 1), 1.)
         return y
 
 
-    def load_model(self, epoch=None):
+    def load_inn(self, epoch=None):
         """
         Load pre-trained model based on modelname.
 
         :return: None
         """
         if epoch is None:
-            self.model = fm.load_model('{}'.format(self.modelname))
+            self.inn.load(f'{self.modelname}.pt')
         else:
-            self.model = fm.load_model('{}_{}'.format(self.modelname, epoch))
-
-
-    def load_weights(self, epoch=None):
-        """
-        Load pre-trained weights based on modelname.
-
-        :return: None
-        """
-        if epoch is None:
-            self.model = fm.load_weight(self.model, '{}'.format(self.modelname))
-        else:
-            self.model = fm.load_weight(self.model, '{}_{}'.format(self.modelname, epoch))
-
+            self.inn.load(f'{self.modelname}_{epoch}.pt')
 
 
     def load_variables(self):
