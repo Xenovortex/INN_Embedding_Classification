@@ -15,7 +15,7 @@ class inn_experiment:
     """
 
     def __init__(self, num_epoch, batch_size, milestones, modelname, device='cpu', lr_init=5e-4, mu_init=11., beta=5.0,
-                 interval_log=100, interval_checkpoint=80, interval_figure=20):
+                 interval_log=1, interval_checkpoint=5, interval_figure=20):
         """
         Init class with pretraining setup.
 
