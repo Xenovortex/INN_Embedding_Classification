@@ -33,7 +33,7 @@ class GenerativeClassifier(nn.Module):
         for p in self.trainable_params:
             p.data *= weight_init
 
-        self.trainable_params += [self.mu, self.phi]
+        self.trainable_params += [self.mu]
 
         optimizer_params = [ {'params':list(filter(lambda p: p.requires_grad, self.inn.parameters()))},]
 

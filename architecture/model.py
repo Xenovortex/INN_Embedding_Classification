@@ -1,5 +1,4 @@
 from FrEIA import framework as fr
-from FrEIA.modules import coeff_functs as fu
 from FrEIA.modules import coupling_layers as la
 import torchvision.models as models
 import torch.nn as nn
@@ -22,7 +21,7 @@ def fc_constr(c_in, c_out):
     return nn.Sequential(*net)
 
 
-def inn_model(img_dims=[25088]):
+def inn_model(img_dims=[2048]):
     """
     Return INN model.
 

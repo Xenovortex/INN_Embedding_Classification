@@ -38,9 +38,8 @@ class inn_experiment:
         self.interval_checkpoint = interval_checkpoint
         self.interval_figure = interval_figure
 
-        self.vgg = m.get_vgg16()
+        self.vgg = m.get_vgg16().to(self.device)
         self.inn = gc.GenerativeClassifier(init_latent_scale=mu_init, lr=lr_init).to(self.device)
-        self.init_param()
 
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.inn.optimizer, milestones=milestones, gamma=0.1)
 
@@ -66,6 +65,8 @@ class inn_experiment:
         :param pin_memory: If True, the data loader will copy tensors into CUDA pinned memory before returning them
         :param drop_last: If true, drop the last incomplete batch, if the dataset is not divisible by the batch size
         """
+        print()
+        print("Loading Dataset:")
         self.trainset, self.testset, self.classes = dl.load_imagenet()
         self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, drop_last)
         self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, drop_last)
@@ -106,8 +107,11 @@ class inn_experiment:
                 self.inn.optimizer.zero_grad()
 
                 feat = self.vgg(img)
+                
+                if i == 1:
+                    print(feat.size())
 
-                losses = self.inn(feat, labels)
+                losses = self.inn(feat.flatten(), labels)
                 loss = losses['nll_joint_tr'] + self.beta * losses['cat_ce_tr']
 
                 loss.backward()
@@ -159,24 +163,9 @@ class inn_experiment:
         fm.save_variable([self.train_loss_log, self.test_loss_log], '{}_loss'.format(self.modelname))
 
 
-    def init_param(self, sigma=0.1):
-        """
-        Initialize weights for INN models.
-
-        :param sigma: standard deviation for gaussian
-        :return: None
-        """
-        for key, param in self.inn.named_parameters():
-            split = key.split('.')
-            if param.requires_grad:
-                param.data = sigma * torch.randn(param.data.shape).cuda()
-                if split[3][-1] == '3':  # last convolution in the coeff func
-                    param.data.fill_(0.)
-
-
     def onehot(self, label):
         y = torch.cuda.FloatTensor(label.shape[0], self.num_classes).zero_()
-        y.scatter_(1, label.view(-1, 1), 1.)
+        y.scatter_(1, label.view(-1, 1).long(), 1.)
         return y
 
 
