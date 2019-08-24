@@ -8,6 +8,26 @@ import numpy as np
 from tqdm import tqdm_notebook as tqdm
 
 
+def load_cifar():
+    """
+    Check if the CIFAR10 dataset already exists in the directory "./datasets/cifar". If not, the CIFAR10 dataset is
+    downloaded. Returns trainset, testset and classes of CIFAR10.
+    :return: trainset, testset, classes of CIFAR10
+    """
+
+    save_path = "./datasets/cifar"
+
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean=[0.4914, 0.4822, 0.4465],
+                                 std=[0.247, 0.243, 0.261])])
+
+    trainset = datasets.CIFAR10(root=save_path, train=True, transform=transform, download=True)
+    testset = datasets.CIFAR10(root=save_path, train=False, transform=transform, download=True)
+
+    classes = ['plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+
+    return trainset, testset, classes
+
+
 def load_imagenet():
     """
     Check if ImageNet dataset already exists in directory "/datasets/imagenet". If not, the ImageNet dataset is

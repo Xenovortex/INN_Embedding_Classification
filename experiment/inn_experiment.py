@@ -71,6 +71,7 @@ class inn_experiment:
         self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, drop_last)
         self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, drop_last)
         self.num_classes = len(self.classes)
+        print("Finished!")
 
 
     def train(self):
