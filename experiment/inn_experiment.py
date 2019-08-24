@@ -15,7 +15,7 @@ class inn_experiment:
     """
 
     def __init__(self, num_epoch, batch_size, milestones, modelname, device='cpu', lr_init=5e-4, mu_init=11., beta=5.0,
-                 interval_log=1, interval_checkpoint=5, interval_figure=20):
+                 interval_log=1, interval_checkpoint=5, interval_figure=20, use_vgg=False):
         """
         Init class with pretraining setup.
 
@@ -38,7 +38,10 @@ class inn_experiment:
         self.interval_checkpoint = interval_checkpoint
         self.interval_figure = interval_figure
 
-        self.vgg = m.get_vgg16().to(self.device)
+        if use_vgg:
+            self.vgg = m.get_vgg16().to(self.device)
+        else:
+            self.vgg = None
         self.inn = gc.GenerativeClassifier(init_latent_scale=mu_init, lr=lr_init).to(self.device)
 
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.inn.optimizer, milestones=milestones, gamma=0.1)
@@ -85,7 +88,6 @@ class inn_experiment:
         t_start = time()
 
         for epoch in range(self.num_epoch):
-            self.scheduler.step()
             self.inn.train()
 
             running_avg = {l: [] for l in self.train_loss_names}
@@ -107,10 +109,10 @@ class inn_experiment:
 
                 self.inn.optimizer.zero_grad()
 
-                feat = self.vgg(img)
-                
-                if i == 1:
-                    print(feat.size())
+                if self.vgg is not None:
+                    feat = self.vgg(img)
+                else:
+                    feat = img
 
                 losses = self.inn(feat.flatten(), labels)
                 loss = losses['nll_joint_tr'] + self.beta * losses['cat_ce_tr']
@@ -120,6 +122,9 @@ class inn_experiment:
 
                 for name in self.train_loss_names:
                     running_avg[name].append(losses[name].item())
+
+            self.scheduler.step()
+            self.inn.eval()
 
             if (epoch % self.interval_log) == 0:
                 for name in self.train_loss_names:
