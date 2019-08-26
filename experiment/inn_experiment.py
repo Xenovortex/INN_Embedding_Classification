@@ -176,14 +176,16 @@ class inn_experiment:
                 print(self.output_fmt.format(*losses_display), flush=True)
 
             if epoch > 0 and (epoch % self.interval_checkpoint) == 0:
+                print("Save model:")
                 if not os.path.exists('./models'):
                     os.mkdir('./models')
                 self.inn.save(f'models/{self.modelname}_{epoch}.pt')
 
             if (epoch % self.interval_figure) == 0:
+                print("Create Plots:")
                 if not os.path.exists('./plots'):
                     os.mkdir('./plots')
-                self.val_plots0(f'plots/{self.modelname}_{epoch}.pdf')
+                self.val_plots(f'plots/{self.modelname}_{epoch}.pdf')
 
 
         print()
@@ -331,7 +333,7 @@ class inn_experiment:
         true_label = []
 
         with torch.no_grad():
-            for x, y in self.testloader:
+            for x, y in tqdm(self.testloader):
                 true_label.append(y.cpu().numpy())
                 x, y = x.cuda(), self.onehot(y.cuda())
                 z = self.inn(x).cpu().numpy()
@@ -349,12 +351,6 @@ class inn_experiment:
         ''' the option `test_set` controls, whether the test set, or the validation set is used.'''
 
         score, correct_pred = [], []
-
-        from torchvision.datasets import FashionMNIST
-        from torch.utils.data import DataLoader
-        fashion_generator = DataLoader(
-            FashionMNIST('./fashion_mnist', download=True, train=False, transform=data.transform),
-            batch_size=self.batch_size, num_workers=8)
 
         # continue using dropout for WAIC
         self.inn.train()
@@ -374,7 +370,7 @@ class inn_experiment:
             return np.mean(ll_joint, axis=1) + np.var(ll_joint, axis=1)
 
         with torch.no_grad():
-            for x, y in self.testloader:
+            for x, y in tqdm(self.testloader):
                 x, y = x.cuda(), self.onehot(y.cuda())
                 score.append(waic(x))
                 if self.vgg is not None:
@@ -386,8 +382,8 @@ class inn_experiment:
                                      == torch.argmax(losses['logits_tr'], dim=1)).cpu().numpy())
 
             score_fashion = []
-            for x, y in fashion_generator:
-                x = x.cuda()
+            for i in tqdm(range(10000)):
+                x = np.random.rand(3, 32, 32)
                 score_fashion.append(waic(x))
 
             #score_adv = []
