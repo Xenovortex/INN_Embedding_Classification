@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
 
+
 class inn_experiment:
     """
     Class for training INN models
@@ -311,7 +312,34 @@ class inn_experiment:
 
         plt.tight_layout()
 
-   
+
+    def show_latent_space(self):
+        ''' the option `test_set` controls, whether the test set, or the validation set is used.'''
+
+        clusters = self.inn.mu.data.cpu().numpy().squeeze()
+        pca = PCA(n_components=2)
+        pca.fit(clusters)
+
+        mu_red = pca.transform(clusters)
+        z_red = []
+        true_label = []
+
+        with torch.no_grad():
+            for x, y in self.testloader:
+                true_label.append(y.cpu().numpy())
+                x, y = x.cuda(), self.onehot(y.cuda())
+                z = self.inn(x).cpu().numpy()
+                z_red.append(pca.transform(z))
+
+        z_red = np.concatenate(z_red, axis=0)
+        true_label = np.concatenate(true_label, axis=0)
+
+        plt.figure()
+        plt.scatter(mu_red[:, 0], mu_red[:, 1], c=np.arange(10), cmap='tab10', s=250, alpha=0.5)
+        plt.scatter(z_red[:, 0], z_red[:, 1], c=true_label, cmap='tab10', s=1)
+        plt.tight_layout()
+
+
 
 
 
