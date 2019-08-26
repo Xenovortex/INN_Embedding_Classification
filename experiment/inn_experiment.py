@@ -1,4 +1,5 @@
 from time import time
+import glob
 import torch
 import numpy as np
 from functionalities import dataloader as dl
@@ -338,6 +339,95 @@ class inn_experiment:
         plt.scatter(mu_red[:, 0], mu_red[:, 1], c=np.arange(10), cmap='tab10', s=250, alpha=0.5)
         plt.scatter(z_red[:, 0], z_red[:, 1], c=true_label, cmap='tab10', s=1)
         plt.tight_layout()
+
+    def outlier_histogram(self):
+        ''' the option `test_set` controls, whether the test set, or the validation set is used.'''
+
+        score, correct_pred = [], []
+
+        from torchvision.datasets import FashionMNIST
+        from torch.utils.data import DataLoader
+        fashion_generator = DataLoader(
+            FashionMNIST('./fashion_mnist', download=True, train=False, transform=data.transform),
+            batch_size=self.batch_size, num_workers=8)
+
+        # continue using dropout for WAIC
+        self.inn.train()
+
+        def waic(x):
+            waic_samples = 1
+            ll_joint = []
+            for i in range(waic_samples):
+                if self.vgg is not None:
+                    feat = self.vgg(x)
+                else:
+                    feat = x
+                losses = self.inn(feat, y=None, loss_mean=False)
+                ll_joint.append(losses['nll_joint_tr'].cpu().numpy())
+
+            ll_joint = np.stack(ll_joint, axis=1)
+            return np.mean(ll_joint, axis=1) + np.var(ll_joint, axis=1)
+
+        with torch.no_grad():
+            for x, y in self.testloader:
+                x, y = x.cuda(), self.onehot(y.cuda())
+                score.append(waic(x))
+                if self.vgg is not None:
+                    feat = self.vgg(x)
+                else:
+                    feat = x
+                losses = self.inn(feat, y, loss_mean=False)
+                correct_pred.append((torch.argmax(y, dim=1)
+                                     == torch.argmax(losses['logits_tr'], dim=1)).cpu().numpy())
+
+            score_fashion = []
+            for x, y in fashion_generator:
+                x = x.cuda()
+                score_fashion.append(waic(x))
+
+            #score_adv = []
+            #score_adv_ref = []
+
+            #adv_images = np.stack([np.load(f) for f in glob.glob('./adv_examples/adv_*.npy')], axis=0)
+            #ref_images = np.stack([np.load(f) for f in glob.glob('./adv_examples/img_*.npy')], axis=0)
+
+            #adv_images = torch.Tensor(adv_images).cuda()
+            #ref_images = torch.Tensor(ref_images).cuda()
+
+            #score_adv = waic(adv_images)
+            #score_ref = waic(ref_images)
+
+        self.inn.eval()
+
+        score = np.concatenate(score, axis=0)
+        correct_pred = np.concatenate(correct_pred, axis=0)
+        score_fashion = np.concatenate(score_fashion, axis=0)
+
+        # val_range = [np.quantile(np.concatenate((score, score_fashion, score_adv)),  0.01),
+        # np.quantile(np.concatenate((score, score_fashion, score_adv)),  0.6)]
+        val_range = [-8, 0]
+        val_range[0] -= 0.03 * (val_range[1] - val_range[0])
+        val_range[1] += 0.03 * (val_range[1] - val_range[0])
+
+        bins = 40
+
+        plt.figure()
+        plt.hist(score[correct_pred == 1], bins=bins, range=val_range, histtype='step', label='correct', density=True,
+                 color='green')
+        plt.hist(score[correct_pred == 0], bins=3 * bins, range=val_range, histtype='step', label='not correct',
+                 density=True, color='red')
+        plt.hist(score_fashion, bins=bins, range=val_range, histtype='step', label='$\mathcal{Fashion}$', density=True,
+                 color='magenta')
+
+        #plt.hist(score_adv, bins=bins, range=val_range, histtype='step', label='Adv attacks', density=True,
+         #        color='blue')
+        #plt.hist(score_ref, bins=bins, range=val_range, histtype='step', label='Non-attacked images', density=True,
+         #        color='gray')
+
+        plt.legend()
+
+
+    
 
 
 
