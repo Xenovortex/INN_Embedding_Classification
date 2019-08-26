@@ -7,6 +7,8 @@ from functionalities import plot as pl
 from architecture import generative_classifier as gc
 from architecture import model as m
 from tqdm import tqdm_notebook as tqdm
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
 
 
 class inn_experiment:
@@ -291,6 +293,25 @@ class inn_experiment:
             pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)], self.test_loss_log[name], 'Epoch',
                     'Loss', ['loss'], "{} Test Loss History {}".format(name, self.modelname),
                     "test_loss_{}_{}".format(self.modelname, name), sub_dim, figsize, font_size, y_log_scale)
+
+
+    def show_samples(self, y, T=0.75):
+        with torch.no_grad():
+            samples = self.inn.sample(y, T).cpu().numpy()
+
+        w = y.shape[1]
+        h = int(np.ceil(y.shape[0] / w))
+
+        plt.figure()
+        for k in range(y.shape[0]):
+            plt.subplot(h, w, k + 1)
+            plt.imshow(samples[k], cmap='gray')
+            plt.xticks([])
+            plt.yticks([])
+
+        plt.tight_layout()
+
+   
 
 
 
