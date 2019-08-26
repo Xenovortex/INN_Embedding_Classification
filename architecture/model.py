@@ -11,7 +11,7 @@ def get_vgg16():
     :return: partial VGG16 model, which takes ImageNet images and return features
     """
     vgg = models.vgg16(pretrained=True)
-    vgg_feature = vgg.features
+    vgg_feature = vgg.features[:-1]
 
     return vgg_feature
 
@@ -21,7 +21,7 @@ def fc_constr(c_in, c_out):
     return nn.Sequential(*net)
 
 
-def inn_model(img_dims=[2048]):
+def inn_model(img_dims=[4]):
     """
     Return INN model.
 
@@ -39,7 +39,7 @@ def inn_model(img_dims=[2048]):
 
     nodes = [inp, outp, fc1, fc2, fc3]
 
-    model = fr.ReversibleGraphNet(nodes, 0, 1)
+    model = fr.ReversibleGraphNet(nodes)
 
     return model
 

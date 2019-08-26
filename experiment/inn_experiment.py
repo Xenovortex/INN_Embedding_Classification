@@ -15,7 +15,7 @@ class inn_experiment:
     """
 
     def __init__(self, num_epoch, batch_size, milestones, modelname, device='cpu', lr_init=5e-4, mu_init=11., beta=5.0,
-                 interval_log=1, interval_checkpoint=5, interval_figure=20, use_vgg=False):
+                 interval_log=1, interval_checkpoint=1, interval_figure=20, use_vgg=False):
         """
         Init class with pretraining setup.
 
@@ -54,13 +54,13 @@ class inn_experiment:
                         'acc_test', 'delta_mu_test']
 
         self.train_loss_names = [l for l in self.plot_columns if l[-3:] == '_tr']
-        self.test_loss_names = [l for l in self.plot_columns if l[-4:] == '_test']
+        self.test_loss_names = [l for l in self.plot_columns if l[-5:] == '_test']
 
         self.header_fmt = '{:>15}' * len(self.plot_columns)
         self.output_fmt = '{:15.1f}      {:04d}/{:04d}' + '{:15.5f}' * (len(self.plot_columns) - 3)
 
 
-    def get_dataset(self, pin_memory=True, drop_last=True):
+    def get_dataset(self, dataset='imagenet', pin_memory=True, num_workers=8):
         """
         Init train-, testset and train-, testloader for experiment. Furthermore criterion will be initialized.
 
@@ -69,10 +69,16 @@ class inn_experiment:
         :param drop_last: If true, drop the last incomplete batch, if the dataset is not divisible by the batch size
         """
         print()
-        print("Loading Dataset:")
-        self.trainset, self.testset, self.classes = dl.load_imagenet()
-        self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, drop_last)
-        self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, drop_last)
+        print("Loading Dataset: {}".format(dataset))
+        if dataset == "imagenet":
+            self.trainset, self.testset, self.classes = dl.load_imagenet()
+        elif dataset == "cifar":
+            self.trainset, self.testset, self.classes = dl.load_cifar()
+        else:
+            print("The requested dataset is not implemented yet.")
+            print("Possible options are: imagenet and cifar.")
+        self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, shuffle=True, num_workers=num_workers)
+        self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, shuffle=False, num_workers=num_workers)
         self.num_classes = len(self.classes)
         print("Finished!")
 
@@ -114,7 +120,9 @@ class inn_experiment:
                 else:
                     feat = img
 
-                losses = self.inn(feat.flatten(), labels)
+                feat = feat.view(feat.size(0), -1)
+
+                losses = self.inn(feat, labels)
                 loss = losses['nll_joint_tr'] + self.beta * losses['cat_ce_tr']
 
                 loss.backward()
@@ -124,19 +132,37 @@ class inn_experiment:
                     running_avg[name].append(losses[name].item())
 
             self.scheduler.step()
-            self.inn.eval()
 
             if (epoch % self.interval_log) == 0:
+                self.inn.eval()
+                print("Evaluating:")
                 for name in self.train_loss_names:
                     running_avg[name] = np.mean(running_avg[name])
                     self.train_loss_log[name].append(running_avg[name])
 
-                test_x = torch.stack([x[0][0] for x in self.testset], dim=0).to(self.device)
-                test_y = self.onehot(torch.LongTensor([x[1] for x in self.testset]).to(self.device))
-                test_losses = self.inn.validate(test_x, test_y)
+                test_loss_lst = {l: [] for l in self.test_loss_names}
+                for i, data in enumerate(tqdm(self.testloader), 0):
+                    img, labels = data
+                    img, labels = img.to(self.device), self.onehot(labels.to(self.device))
 
+                    with torch.no_grad():
+                        if self.vgg is not None:
+                            feat = self.vgg(img)
+                        else:
+                            feat = img
+
+                        feat = feat.view(feat.size(0), -1)
+
+                        test_losses = self.inn.validate(feat, labels)
+
+                        for name in self.test_loss_names:
+                            test_loss_lst[name].append(test_losses[name].item())
+
+                test_loss = {l: 0 for l in self.test_loss_names}
                 for name in self.test_loss_names:
-                    running_avg[name] = test_losses[name].item()
+                    #test_loss[name] = sum(test_loss_lst[name]) / len(test_loss_lst[name])
+                    test_loss[name] = np.mean(test_loss_lst[name])
+                    running_avg[name] = test_loss[name].item()
                     self.test_loss_log[name].append(running_avg[name])
 
                 losses_display = [(time() - t_start) / 60., epoch, self.num_epoch]
@@ -150,6 +176,7 @@ class inn_experiment:
                 # TODO: evaluater
                 pass
 
+
         print()
         print(80 * "#")
         print(80 * "#")
@@ -157,10 +184,29 @@ class inn_experiment:
 
         print("Evaluating:")
         self.inn.eval()
-        test_x = torch.stack([x[0][0] for x in self.testset], dim=0).to(self.device)
-        test_y = self.onehot(torch.LongTensor([x[1] for x in self.testset]).to(self.device))
-        test_losses = self.inn.validate(test_x, test_y)
-        self.test_acc = test_losses['acc_test']
+        test_loss_lst = {l: [] for l in self.test_loss_names}
+        for i, data in enumerate(tqdm(self.testloader), 0):
+            img, labels = data
+            img, labels = img.to(self.device), self.onehot(labels.to(self.device))
+
+            with torch.no_grad():
+                if self.vgg is not None:
+                    feat = self.vgg(img)
+                else:
+                    feat = img
+
+                feat = feat.view(feat.size(0), -1)
+
+                test_losses = self.inn.validate(feat, labels)
+
+                for name in self.test_loss_names:
+                    test_loss_lst[name].append(test_losses[name].item())
+
+        test_loss = {l: 0 for l in self.test_loss_names}
+        for name in self.test_loss_names:
+            test_loss[name] = np.mean(test_loss_lst[name])
+
+        self.test_acc = test_loss['acc_test']
 
         print("Final Test Accuracy:", self.test_acc)
 

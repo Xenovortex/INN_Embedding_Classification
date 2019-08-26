@@ -51,7 +51,7 @@ def load_imagenet():
     return trainset, testset, classes
 
 
-def get_loader(dataset, batch_size, pin_memory=True, drop_last=True):
+def get_loader(dataset, batch_size, pin_memory=True, shuffle=True, num_workers=4):
     """
     Create loader for a given dataset.
 
@@ -62,7 +62,7 @@ def get_loader(dataset, batch_size, pin_memory=True, drop_last=True):
     :return: loader
     """
 
-    loader = torch.utils.data.DataLoader(dataset, pin_memory=pin_memory, batch_size=batch_size, drop_last=drop_last)
+    loader = torch.utils.data.DataLoader(dataset, pin_memory=pin_memory, batch_size=batch_size, drop_last=True, shuffle=shuffle, num_workers=num_workers)
 
     return loader
 

@@ -9,7 +9,7 @@ class GenerativeClassifier(nn.Module):
     taken from Lynton with slight modifications
 
     """
-    def __init__(self, init_latent_scale=4, dims=(3, 64, 64), n_classes=1000, lr=5e-4, weight_init=1.0):
+    def __init__(self, init_latent_scale=4, dims=(2, 2), n_classes=1000, lr=5e-4, weight_init=1.0):
         super().__init__()
 
         self.dims = dims
@@ -89,12 +89,12 @@ class GenerativeClassifier(nn.Module):
         if is_train:
             self.inn.train()
 
-        return {'nll_joint_val': nll_joint,
-                'nll_class_val': nll_class,
-                'logits_val':    logits,
-                'cat_ce_val':    cat_ce,
-                'acc_val':       acc,
-                'delta_mu_val':  mu_dist}
+        return {'nll_joint_test': nll_joint,
+                'nll_class_test': nll_class,
+                'logits_test':    logits,
+                'cat_ce_test':    cat_ce,
+                'acc_test':       acc,
+                'delta_mu_test':  mu_dist}
 
     def sample(self, y, temperature=1.):
         z = temperature * torch.randn(y.shape[0], self.ndim_tot).cuda()
@@ -105,14 +105,12 @@ class GenerativeClassifier(nn.Module):
     def save(self, fname):
         torch.save({'inn':self.inn.state_dict(),
                     'mu':self.mu,
-                    'phi':self.phi,
                     'opt':self.optimizer.state_dict()}, fname)
 
     def load(self, fname):
         data = torch.load(fname)
         self.inn.load_state_dict(data['inn'])
         self.mu.data.copy_(data['mu'].data)
-        self.phi.data.copy_(data['phi'].data)
         try:
             self.optimizer.load_state_dict(data['opt'])
         except:
