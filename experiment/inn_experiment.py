@@ -1,3 +1,4 @@
+import os
 from time import time
 import glob
 import torch
@@ -9,6 +10,7 @@ from architecture import generative_classifier as gc
 from architecture import model as m
 from tqdm import tqdm_notebook as tqdm
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 from sklearn.decomposition import PCA
 
 
@@ -19,7 +21,7 @@ class inn_experiment:
     """
 
     def __init__(self, num_epoch, batch_size, milestones, modelname, device='cpu', lr_init=5e-4, mu_init=11., beta=5.0,
-                 interval_log=1, interval_checkpoint=1, interval_figure=20, use_vgg=False):
+                 interval_log=1, interval_checkpoint=1, interval_figure=1, use_vgg=False):
         """
         Init class with pretraining setup.
 
@@ -174,11 +176,14 @@ class inn_experiment:
                 print(self.output_fmt.format(*losses_display), flush=True)
 
             if epoch > 0 and (epoch % self.interval_checkpoint) == 0:
-                self.inn.save(f'{self.modelname}_{epoch}.pt')
+                if not os.path.exists('./models'):
+                    os.mkdir('./models')
+                self.inn.save(f'models/{self.modelname}_{epoch}.pt')
 
             if (epoch % self.interval_figure) == 0:
-                # TODO: evaluater
-                pass
+                if not os.path.exists('./plots'):
+                    os.mkdir('./plots')
+                self.val_plots0(f'plots/{self.modelname}_{epoch}.pdf')
 
 
         print()
@@ -475,6 +480,24 @@ class inn_experiment:
         plt.errorbar(p, q, yerr=poisson_err, capsize=4, fmt='-o')
         plt.fill_between(p, q - poisson_err, q + poisson_err, alpha=0.25)
         plt.plot([0, 1], [0, 1], color='black')
+
+    def val_plots(self, fname):
+        n_classes = self.num_classes
+        n_samples = 4
+
+        y_digits = torch.zeros(n_classes * n_samples, n_classes).cuda()
+        for i in range(n_classes):
+            y_digits[n_samples * i: n_samples * (i + 1), i] = 1.
+
+        self.show_samples(y_digits)
+        self.show_latent_space()
+
+        with PdfPages(fname) as pp:
+            figs = [plt.figure(n) for n in plt.get_fignums()]
+            for fig in figs:
+                fig.savefig(pp, format='pdf')
+
+        plt.close('all')
 
 
 
