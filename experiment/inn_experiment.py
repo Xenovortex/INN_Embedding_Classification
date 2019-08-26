@@ -427,7 +427,54 @@ class inn_experiment:
         plt.legend()
 
 
-    
+    def calibration_curve(self):
+
+        pred = []
+        gt = []
+        with torch.no_grad():
+            for x, y in self.test_loader:
+                x, y = x.cuda(), self.onehot(y.cuda())
+                if self.vgg is not None:
+                    feat = self.vgg(x)
+                else:
+                    feat = x
+                logits = self.inn(feat, y, loss_mean=False)['logits_tr']
+
+                # log_pred = logits - torch.logsumexp(logits + np.log(1/10.), dim=1, keepdim=True)
+                # exp_pred = torch.exp(log_pred)
+                # print(torch.mean(torch.max(exp_pred, dim=1)[0]))
+
+                pred.append(torch.softmax(logits, dim=1).cpu().numpy())
+                # pred.append(torch.exp(log_pred).cpu().numpy())
+                gt.append(y.cpu().numpy())
+
+        pred = np.concatenate(pred, axis=0).flatten()
+        gt = np.concatenate(gt, axis=0).astype(np.bool).flatten()
+
+        mask = (pred > 1e-6)
+        mask = mask * (pred < (1 - 1e-6))
+
+        pred, gt = pred[mask], gt[mask]
+
+        n_bins = np.sum(mask) / 50.
+        pred_bins = np.quantile(pred, np.linspace(0., 1., n_bins))
+        print(np.sum(mask))
+
+        correct = pred[gt]
+        wrong = pred[np.logical_not(gt)]
+
+        hist_correct, _ = np.histogram(correct, bins=pred_bins)
+        hist_wrong, _ = np.histogram(wrong, bins=pred_bins)
+
+        q = hist_correct / (hist_wrong + hist_correct)
+        p = 0.5 * (pred_bins[1:] + pred_bins[:-1])
+
+        poisson_err = q * np.sqrt(1 / hist_correct + 1 / (hist_wrong + hist_correct))
+
+        plt.figure(figsize=(10, 10))
+        plt.errorbar(p, q, yerr=poisson_err, capsize=4, fmt='-o')
+        plt.fill_between(p, q - poisson_err, q + poisson_err, alpha=0.25)
+        plt.plot([0, 1], [0, 1], color='black')
 
 
 
