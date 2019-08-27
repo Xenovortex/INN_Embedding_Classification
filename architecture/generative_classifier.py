@@ -16,7 +16,7 @@ class GenerativeClassifier(nn.Module):
         self.n_classes = n_classes
         self.ndim_tot = int(np.prod(dims))
 
-        self.inn = model.inn_model()
+        self.inn = model.inn_model(self.ndim_tot)
         init_scale = init_latent_scale / np.sqrt(2 * self.ndim_tot // n_classes)
         self.mu = nn.Parameter(torch.zeros(1, n_classes, self.ndim_tot))
         for k in range(self.ndim_tot // n_classes):

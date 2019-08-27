@@ -37,8 +37,11 @@ class inn_experiment:
                """
         self.num_epoch = num_epoch
         self.batch_size = batch_size
+        self.milestones = milestones
         self.modelname = modelname
         self.device = device
+        self.lr_init = lr_init
+        self.mu_init = mu_init
         self.beta = beta
         self.interval_log = interval_log
         self.interval_checkpoint = interval_checkpoint
@@ -46,11 +49,10 @@ class inn_experiment:
 
         if use_vgg:
             self.vgg = m.get_vgg16().to(self.device)
+            self.dims = (2, 2)
         else:
             self.vgg = None
-        self.inn = gc.GenerativeClassifier(init_latent_scale=mu_init, lr=lr_init).to(self.device)
-
-        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.inn.optimizer, milestones=milestones, gamma=0.1)
+            self.dims = (3, 32, 32)
 
         print("Device used for further computation is:", self.device)
 
@@ -76,6 +78,7 @@ class inn_experiment:
         """
         print()
         print("Loading Dataset: {}".format(dataset))
+        
         if dataset == "imagenet":
             self.trainset, self.testset, self.classes = dl.load_imagenet()
         elif dataset == "cifar":
@@ -83,9 +86,14 @@ class inn_experiment:
         else:
             print("The requested dataset is not implemented yet.")
             print("Possible options are: imagenet and cifar.")
+        
         self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, shuffle=True, num_workers=num_workers)
         self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, shuffle=False, num_workers=num_workers)
         self.num_classes = len(self.classes)
+        
+        self.inn = gc.GenerativeClassifier(init_latent_scale=self.mu_init, lr=self.lr_init, dims=self.dims, n_classes=self.num_classes).to(self.device)
+        self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.inn.optimizer, milestones=self.milestones, gamma=0.1)
+        
         print("Finished!")
 
 
@@ -176,10 +184,10 @@ class inn_experiment:
                 print(self.output_fmt.format(*losses_display), flush=True)
 
             if epoch > 0 and (epoch % self.interval_checkpoint) == 0:
-                print("Save model:")
                 if not os.path.exists('./models'):
                     os.mkdir('./models')
                 self.inn.save(f'models/{self.modelname}_{epoch}.pt')
+                print("Model saved!")
 
             if (epoch % self.interval_figure) == 0:
                 print("Create Plots:")
@@ -221,7 +229,7 @@ class inn_experiment:
 
         print("Final Test Accuracy:", self.test_acc)
 
-        self.inn.save(f'{self.modelname}.pt')
+        self.inn.save(f'plots/{self.modelname}.pt')
         fm.save_variable(self.test_acc, '{}_acc'.format(self.modelname))
         fm.save_variable([self.train_loss_log, self.test_loss_log], '{}_loss'.format(self.modelname))
 
@@ -296,7 +304,7 @@ class inn_experiment:
         pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)],
                 [self.test_loss_log[name] for name in self.test_loss_names], 'Epoch', 'Loss',
                 ['{}'.format(name) for name in self.test_loss_names], "Test Loss History {}".format(self.modelname),
-                "test_loss_{}".format_map(self.modelname), sub_dim, figsize, font_size, y_log_scale)
+                "test_loss_{}".format(self.modelname), sub_dim, figsize, font_size, y_log_scale)
 
         for name in self.test_loss_names:
             pl.plot([x for x in range(1, self.num_epoch+1, self.interval_log)], self.test_loss_log[name], 'Epoch',
@@ -306,7 +314,7 @@ class inn_experiment:
 
     def show_samples(self, y, T=0.75):
         with torch.no_grad():
-            samples = self.inn.sample(y, T).cpu().numpy()
+            samples = self.inn.sample(y, T).view(y.size(0), self.dims[0], self.dims[1], self.dims[2]).cpu().numpy()
 
         w = y.shape[1]
         h = int(np.ceil(y.shape[0] / w))
@@ -314,7 +322,7 @@ class inn_experiment:
         plt.figure()
         for k in range(y.shape[0]):
             plt.subplot(h, w, k + 1)
-            plt.imshow(samples[k], cmap='gray')
+            plt.imshow(np.transpose(samples[k], (1, 2, 0)), cmap='gray')
             plt.xticks([])
             plt.yticks([])
 
@@ -335,15 +343,22 @@ class inn_experiment:
         with torch.no_grad():
             for x, y in tqdm(self.testloader):
                 true_label.append(y.cpu().numpy())
-                x, y = x.cuda(), self.onehot(y.cuda())
-                z = self.inn(x).cpu().numpy()
+                x, y = x.to(self.device), self.onehot(y.to(self.device))
+                
+                if self.vgg is not None:
+                    feat = self.vgg(x)
+                else:
+                    feat = x
+                    
+                feat = feat.view(feat.size(0), -1)
+                z = self.inn.inn(feat).cpu().numpy()
                 z_red.append(pca.transform(z))
 
         z_red = np.concatenate(z_red, axis=0)
         true_label = np.concatenate(true_label, axis=0)
 
         plt.figure()
-        plt.scatter(mu_red[:, 0], mu_red[:, 1], c=np.arange(10), cmap='tab10', s=250, alpha=0.5)
+        plt.scatter(mu_red[:, 0], mu_red[:, 1], c=np.arange(self.num_classes), cmap='tab10', s=250, alpha=0.5)
         plt.scatter(z_red[:, 0], z_red[:, 1], c=true_label, cmap='tab10', s=1)
         plt.tight_layout()
 
@@ -485,7 +500,9 @@ class inn_experiment:
         for i in range(n_classes):
             y_digits[n_samples * i: n_samples * (i + 1), i] = 1.
 
-        self.show_samples(y_digits)
+        if self.vgg is None:
+            self.show_samples(y_digits)
+        
         self.show_latent_space()
 
         with PdfPages(fname) as pp:

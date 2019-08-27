@@ -21,7 +21,7 @@ def fc_constr(c_in, c_out):
     return nn.Sequential(*net)
 
 
-def inn_model(img_dims=[4]):
+def inn_model(img_dims=4):
     """
     Return INN model.
 
@@ -29,7 +29,7 @@ def inn_model(img_dims=[4]):
     :return: INN model
     """
 
-    inp = fr.InputNode(*img_dims, name='input')
+    inp = fr.InputNode(img_dims, name='input')
 
     fc1 = fr.Node([inp.out0], la.GLOWCouplingBlock, {'subnet_constructor': fc_constr, 'clamp': 2}, name='fc1')
     fc2 = fr.Node([fc1.out0], la.GLOWCouplingBlock, {'subnet_constructor': fc_constr, 'clamp': 2}, name='fc2')
@@ -42,5 +42,10 @@ def inn_model(img_dims=[4]):
     model = fr.ReversibleGraphNet(nodes)
 
     return model
+
+
+
+
+
 
 
