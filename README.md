@@ -14,7 +14,7 @@
 > run all cells
 
 ### INN Generative Classifier on VGG features
-> open *main_cifar_generate.ipynb*  
+> open *main_cifar_feat.ipynb*  
 > set appropiate parameters in "Set Training Parameters" section  
 > run all cells
 
