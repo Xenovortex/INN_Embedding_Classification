@@ -9,13 +9,13 @@
 ## Usage
 
 ### INN Generative Classifier
-> open *main_cifar_generate.ipynb*
-> set appropiate parameters in "Set Training Parameters" section
+> open *main_cifar_generate.ipynb*  
+> set appropiate parameters in "Set Training Parameters" section  
 > run all cells
 
 ### INN Generative Classifier on VGG features
-> open *main_cifar_generate.ipynb*
-> set appropiate parameters in "Set Training Parameters" section
+> open *main_cifar_generate.ipynb*  
+> set appropiate parameters in "Set Training Parameters" section  
 > run all cells
 
 ## Contact
