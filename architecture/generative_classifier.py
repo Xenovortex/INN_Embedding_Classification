@@ -9,14 +9,17 @@ class GenerativeClassifier(nn.Module):
     taken from Lynton with slight modifications
 
     """
-    def __init__(self, init_latent_scale=4, dims=(2, 2), n_classes=1000, lr=5e-4, weight_init=1.0):
+    def __init__(self, init_latent_scale=4, dims=(2, 2), n_classes=1000, lr=5e-4, weight_init=1.0, use_vgg=True):
         super().__init__()
 
         self.dims = dims
         self.n_classes = n_classes
         self.ndim_tot = int(np.prod(dims))
-
-        self.inn = model.inn_model(self.ndim_tot)
+        
+        if use_vgg:
+            self.inn = model.inn_model(self.ndim_tot)
+        else:
+            self.inn = model.constuct_inn(self.dims)
         init_scale = init_latent_scale / np.sqrt(2 * self.ndim_tot // n_classes)
         self.mu = nn.Parameter(torch.zeros(1, n_classes, self.ndim_tot))
         for k in range(self.ndim_tot // n_classes):

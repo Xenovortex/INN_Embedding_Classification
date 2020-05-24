@@ -32,7 +32,6 @@ def load_imagenet():
     """
     Check if ImageNet dataset already exists in directory "/datasets/imagenet". If not, the ImageNet dataset is
     downloaded.
-
     :return: trainset, testset and classes of ImageNet
     """
 
@@ -51,6 +50,26 @@ def load_imagenet():
     return trainset, testset, classes
 
 
+def load_imagenet_subset():
+    """
+    Check if ImageNet dataset already exists in directory "/datasets/imagenet". If not, the ImageNet dataset is
+    downloaded.
+
+    :return: trainset, testset and classes of ImageNet
+    """
+
+    path = "./datasets/imagenet_subset"
+
+
+    transform = transforms.Compose([transforms.Resize((256, 256)), transforms.ToTensor()])
+
+    dataset = datasets.ImageFolder(path, transform)
+
+    classes = dataset.classes
+
+    return dataset, classes
+
+
 def get_loader(dataset, batch_size, pin_memory=True, shuffle=True, num_workers=4):
     """
     Create loader for a given dataset.
@@ -67,7 +86,7 @@ def get_loader(dataset, batch_size, pin_memory=True, shuffle=True, num_workers=4
     return loader
 
 
-def split_dataset(dataset, ratio, batch_size, pin_memory=True, drop_last=True):
+def split_dataset(dataset, ratio, batch_size, pin_memory=True, num_workers=4):
     """
     Split a dataset into two subset. e.g. trainset and validation-/testset
     :param dataset: dataset, which should be split
@@ -84,10 +103,10 @@ def split_dataset(dataset, ratio, batch_size, pin_memory=True, drop_last=True):
 
     dataloader_1 = torch.utils.data.DataLoader(dataset, pin_memory=pin_memory, batch_size=batch_size,
                                                sampler=torch.utils.data.sampler.SubsetRandomSampler(idx_1),
-                                               drop_last=drop_last)
+                                               drop_last=True, num_workers=num_workers)
 
     dataloader_2 = torch.utils.data.DataLoader(dataset, pin_memory=pin_memory, batch_size=batch_size,
                                                sampler=torch.utils.data.sampler.SubsetRandomSampler(idx_2),
-                                               drop_last=drop_last)
+                                               drop_last=True, num_workers=num_workers)
 
     return dataloader_1, dataloader_2

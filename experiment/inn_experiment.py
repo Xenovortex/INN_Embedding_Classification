@@ -46,10 +46,11 @@ class inn_experiment:
         self.interval_log = interval_log
         self.interval_checkpoint = interval_checkpoint
         self.interval_figure = interval_figure
+        self.use_vgg = use_vgg
 
         if use_vgg:
             self.vgg = m.get_vgg16().to(self.device)
-            self.dims = (2, 2)
+            self.dims = (256, 4, 4)
         else:
             self.vgg = None
             self.dims = (3, 32, 32)
@@ -78,20 +79,22 @@ class inn_experiment:
         """
         print()
         print("Loading Dataset: {}".format(dataset))
+        self.num_workers=8
         
         if dataset == "imagenet":
-            self.trainset, self.testset, self.classes = dl.load_imagenet()
+            self.dataset, self.classes = dl.load_imagenet()
+            self.trainloader, self.testloader = dl.split_dataset(self.dataset, 0.2, self.batch_size, pin_memory, num_workers=num_workers)
         elif dataset == "cifar":
             self.trainset, self.testset, self.classes = dl.load_cifar()
+            self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, shuffle=True, num_workers=num_workers)
+            self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, shuffle=False, num_workers=num_workers)
         else:
             print("The requested dataset is not implemented yet.")
             print("Possible options are: imagenet and cifar.")
         
-        self.trainloader = dl.get_loader(self.trainset, self.batch_size, pin_memory, shuffle=True, num_workers=num_workers)
-        self.testloader = dl.get_loader(self.testset, self.batch_size, pin_memory, shuffle=False, num_workers=num_workers)
         self.num_classes = len(self.classes)
         
-        self.inn = gc.GenerativeClassifier(init_latent_scale=self.mu_init, lr=self.lr_init, dims=self.dims, n_classes=self.num_classes).to(self.device)
+        self.inn = gc.GenerativeClassifier(init_latent_scale=self.mu_init, lr=self.lr_init, dims=self.dims, n_classes=self.num_classes, use_vgg=self.use_vgg).to(self.device)
         self.scheduler = torch.optim.lr_scheduler.MultiStepLR(self.inn.optimizer, milestones=self.milestones, gamma=0.1)
         
         print("Finished!")
@@ -123,7 +126,7 @@ class inn_experiment:
                 print("Warning: GPU is not used for this computation")
                 print("device:", self.device)
 
-            for i, data in enumerate(tqdm(self.trainloader), 0):
+            for i, data in enumerate(tqdm(self.trainloader)):
                 img, labels = data
                 img, labels = img.to(self.device), self.onehot(labels.to(self.device))
 
@@ -131,11 +134,10 @@ class inn_experiment:
 
                 if self.vgg is not None:
                     feat = self.vgg(img)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = img
-
-                feat = feat.view(feat.size(0), -1)
-
+                
                 losses = self.inn(feat, labels)
                 loss = losses['nll_joint_tr'] + self.beta * losses['cat_ce_tr']
 
@@ -162,10 +164,9 @@ class inn_experiment:
                     with torch.no_grad():
                         if self.vgg is not None:
                             feat = self.vgg(img)
+                            feat = feat.view(feat.size(0), -1)
                         else:
                             feat = img
-
-                        feat = feat.view(feat.size(0), -1)
 
                         test_losses = self.inn.validate(feat, labels)
 
@@ -211,10 +212,9 @@ class inn_experiment:
             with torch.no_grad():
                 if self.vgg is not None:
                     feat = self.vgg(img)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = img
-
-                feat = feat.view(feat.size(0), -1)
 
                 test_losses = self.inn.validate(feat, labels)
 
@@ -229,7 +229,8 @@ class inn_experiment:
 
         print("Final Test Accuracy:", self.test_acc)
 
-        self.inn.save(f'plots/{self.modelname}.pt')
+        self.val_plots(f'plots/{self.modelname}.pdf')
+        self.inn.save(f'models/{self.modelname}.pt')
         fm.save_variable(self.test_acc, '{}_acc'.format(self.modelname))
         fm.save_variable([self.train_loss_log, self.test_loss_log], '{}_loss'.format(self.modelname))
 
@@ -247,9 +248,9 @@ class inn_experiment:
         :return: None
         """
         if epoch is None:
-            self.inn.load(f'{self.modelname}.pt')
+            self.inn.load(f'models/{self.modelname}.pt')
         else:
-            self.inn.load(f'{self.modelname}_{epoch}.pt')
+            self.inn.load(f'models/{self.modelname}_{epoch}.pt')
 
 
     def load_variables(self):
@@ -327,6 +328,7 @@ class inn_experiment:
             plt.yticks([])
 
         plt.tight_layout()
+        plt.savefig(os.path.join("./plots", self.modelname + "_samples.png"), transparent=True, bbox_inches='tight', pad_inches=0)
 
 
     def show_latent_space(self):
@@ -347,10 +349,10 @@ class inn_experiment:
                 
                 if self.vgg is not None:
                     feat = self.vgg(x)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = x
                     
-                feat = feat.view(feat.size(0), -1)
                 z = self.inn.inn(feat).cpu().numpy()
                 z_red.append(pca.transform(z))
 
@@ -361,11 +363,25 @@ class inn_experiment:
         plt.scatter(mu_red[:, 0], mu_red[:, 1], c=np.arange(self.num_classes), cmap='tab10', s=250, alpha=0.5)
         plt.scatter(z_red[:, 0], z_red[:, 1], c=true_label, cmap='tab10', s=1)
         plt.tight_layout()
+        plt.savefig(os.path.join("./plots", self.modelname + "_lat_space.png"), transparent=True, bbox_inches='tight', pad_inches=0)
 
-    def outlier_histogram(self):
+    def outlier_histogram(self, bins=40, val_range=None):
         ''' the option `test_set` controls, whether the test set, or the validation set is used.'''
+        
+        #self.load_inn()
 
         score, correct_pred = [], []
+        
+        from torchvision.datasets import SVHN
+        from torch.utils.data import DataLoader
+        import torchvision.transforms as transforms
+
+        #transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean = [x / 255 for x in [129.3, 124.1, 112.4]], std = [x / 255 for x in [68.2, 65.4, 70.4]])])
+        #svhn_generator  = DataLoader(SVHN('./datasets/SVHN', download=True, split='test', transform=transform),
+         #                           batch_size=self.batch_size, num_workers=self.num_workers)
+        _, imagenet_testset, _ = dl.load_imagenet()
+        imagenet_generator = DataLoader(imagenet_testset, batch_size=self.batch_size, num_workers=self.num_workers)
+
 
         # continue using dropout for WAIC
         self.inn.train()
@@ -376,6 +392,7 @@ class inn_experiment:
             for i in range(waic_samples):
                 if self.vgg is not None:
                     feat = self.vgg(x)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = x
                 losses = self.inn(feat, y=None, loss_mean=False)
@@ -390,16 +407,29 @@ class inn_experiment:
                 score.append(waic(x))
                 if self.vgg is not None:
                     feat = self.vgg(x)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = x
                 losses = self.inn(feat, y, loss_mean=False)
                 correct_pred.append((torch.argmax(y, dim=1)
                                      == torch.argmax(losses['logits_tr'], dim=1)).cpu().numpy())
 
-            score_fashion = []
-            for i in tqdm(range(10000)):
-                x = np.random.rand(3, 32, 32)
-                score_fashion.append(waic(x))
+            score_noise = []
+            for i in tqdm(range(100)):
+                x = np.random.rand(self.batch_size, 3, 32, 32)
+                x = torch.from_numpy(x).float().to(self.device)
+                score_noise.append(waic(x))
+                
+           # score_svhn = []
+            #for x, y in tqdm(svhn_generator):
+             #   x = x.to(self.device)
+                #x = data.augment(x)
+              #  score_svhn.append(waic(x))
+                
+            score_imagenet = []
+            for x, y in tqdm(imagenet_generator):
+                x = x.to(self.device)
+                score_imagenet.append(waic(x))
 
             #score_adv = []
             #score_adv_ref = []
@@ -416,42 +446,51 @@ class inn_experiment:
         self.inn.eval()
 
         score = np.concatenate(score, axis=0)
-        correct_pred = np.concatenate(correct_pred, axis=0)
-        score_fashion = np.concatenate(score_fashion, axis=0)
+        #correct_pred = np.concatenate(correct_pred, axis=0)
+        score_noise = np.concatenate(score_noise, axis=0)
+        #score_svhn = np.concatenate(score_svhn, axis=0)
+        score_imagenet = np.concatenate(score_imagenet, axis=0)
 
         # val_range = [np.quantile(np.concatenate((score, score_fashion, score_adv)),  0.01),
         # np.quantile(np.concatenate((score, score_fashion, score_adv)),  0.6)]
-        val_range = [-8, 0]
-        val_range[0] -= 0.03 * (val_range[1] - val_range[0])
-        val_range[1] += 0.03 * (val_range[1] - val_range[0])
-
-        bins = 40
+        if val_range is not None:
+            val_range[0] -= 0.03 * (val_range[1] - val_range[0])
+            val_range[1] += 0.03 * (val_range[1] - val_range[0])
+            print("val_range:", val_range)
 
         plt.figure()
-        plt.hist(score[correct_pred == 1], bins=bins, range=val_range, histtype='step', label='correct', density=True,
-                 color='green')
-        plt.hist(score[correct_pred == 0], bins=3 * bins, range=val_range, histtype='step', label='not correct',
-                 density=True, color='red')
-        plt.hist(score_fashion, bins=bins, range=val_range, histtype='step', label='$\mathcal{Fashion}$', density=True,
-                 color='magenta')
+        plt.hist(score, bins=bins, range=val_range, histtype='step', label='Cifar', density=True, color='green')
+        #plt.hist(score[correct_pred == 1], bins=bins, range=val_range, histtype='step', label='correct', density=True,
+         #        color='green')
+        #plt.hist(score[correct_pred == 0], bins=3 * bins, range=val_range, histtype='step', label='not correct',
+         #        density=True, color='red')
+        plt.hist(score_noise, bins=bins, range=val_range, histtype='step', label='Random Noise', density=True,
+                 color='blue')
+        #plt.hist(score_svhn, bins=bins, range=val_range, histtype='step', label='SVHN', density=True, color='blue')
+        plt.hist(score_imagenet, bins=bins, range=val_range, histtype='step', label='ImageNet32', density=True, color='red')
 
         #plt.hist(score_adv, bins=bins, range=val_range, histtype='step', label='Adv attacks', density=True,
          #        color='blue')
         #plt.hist(score_ref, bins=bins, range=val_range, histtype='step', label='Non-attacked images', density=True,
          #        color='gray')
 
-        plt.legend()
-
+        #plt.legend()
+        #plt.yscale('log', nonposy='clip')
+        
+        plt.savefig(os.path.join("./plots", self.modelname + "_hist.png"), transparent=True, bbox_inches='tight', pad_inches=0)
 
     def calibration_curve(self):
+        
+        #self.load_inn()
 
         pred = []
         gt = []
         with torch.no_grad():
-            for x, y in self.test_loader:
+            for x, y in self.testloader:
                 x, y = x.cuda(), self.onehot(y.cuda())
                 if self.vgg is not None:
                     feat = self.vgg(x)
+                    feat = feat.view(feat.size(0), -1)
                 else:
                     feat = x
                 logits = self.inn(feat, y, loss_mean=False)['logits_tr']
@@ -491,6 +530,7 @@ class inn_experiment:
         plt.errorbar(p, q, yerr=poisson_err, capsize=4, fmt='-o')
         plt.fill_between(p, q - poisson_err, q + poisson_err, alpha=0.25)
         plt.plot([0, 1], [0, 1], color='black')
+        plt.savefig(os.path.join("./plots", self.modelname + "_curve.png"), transparent=True, bbox_inches='tight', pad_inches=0)
 
     def val_plots(self, fname):
         n_classes = self.num_classes
